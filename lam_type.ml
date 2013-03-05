@@ -175,11 +175,6 @@ type ctx = Hole
            | OpLeft of binop * ctx * expr
            | OpRight of binop * expr * ctx
 
-(* Predicate for being just a hole context. *)
-let is_hole = function
-  | Hole -> true
-  | _ -> false
-
 (* Predicate for value expressions. *)
 let value = function
   | Num n -> true
@@ -245,10 +240,10 @@ let rec step = function
  * closure of ↪ (that is, E[e] ⇒ E[e'] if e ↪ e').
  * I.e., step_closure e = v if e ⇒* v. *)
 let rec reduction_relation e =
-  let (c, e) = split e in
-  if is_hole c && value e
-  then e
-  else reduction_relation (recompose (step e) c)
+  let (c, e') = split e in
+  if value e' (* should only happen when c = [] *)
+  then e'
+  else reduction_relation (recompose (step e') c)
 
 (**********************************************************************)
 
