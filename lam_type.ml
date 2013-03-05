@@ -164,6 +164,8 @@ let rec eval = function
 
 (**********************************************************************)
 
+(* Reduction Semantics *)
+
 (* E = [] | E e | v E | E op e | v op E
  *
  * Here, we'll use expr for v, and just keep that invariant manually. *)
@@ -184,10 +186,11 @@ let value = function
   | Lam (i, ty, e) -> true
   | _ -> false
 
+(* Used to assert the argument is a value in beta reduction *)
 let assert_value e =
   if value e then () else raise (EvalError ("Expected value, got", e))
 
-(* Performs the unique decomposition of e into E[e']. *)
+(* Performs the unique decomposition of e into E[e'] and returns (E, e'). *)
 let rec split = function
   | Num n -> (Hole, Num n)
   | Lam (i, ty, e) -> (Hole, Lam (i, ty, e))
@@ -211,7 +214,7 @@ let rec split = function
     else let (c, e) = split e1
          in (AppLeft (c, e2), e)
 
-(* Recomposes an expression and a context into an expression. *)
+(* Takes an expression and a context and recomposes them into an expression. *)
 let rec recompose e = function
   | Hole -> e
   | OpLeft   (b, c, e2) -> Binop (b, recompose e c, e2)
