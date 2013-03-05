@@ -19,6 +19,30 @@ type expr = App of expr * expr
 
 (**********************************************************************)
 
+open Printf
+
+let fprintf_bop out = function
+  | Plus  -> fprintf out "+"
+  | Minus -> fprintf out "-"
+  | Times -> fprintf out "*"
+  | Div   -> fprintf out "/"
+
+let rec fprintf_type out = function
+  | Int -> fprintf out "int"
+  | Fun (t1, t2) -> fprintf out "(%a -> %a)" fprintf_type t1 fprintf_type t2
+
+let rec fprintf_expr out = function
+  | Num n -> fprintf out "%d" n
+  | Var v -> fprintf out "%s" v
+  | Binop (b, e1, e2) ->
+    fprintf out "(%a %a %a)" fprintf_expr e1 fprintf_bop b fprintf_expr e2
+  | Lam (i, ty, e) ->
+    fprintf out "(\\%s : %a.%a)" i fprintf_type ty fprintf_expr e
+  | App (e1, e2) ->
+    fprintf out "%a %a" fprintf_expr e1 fprintf_expr e2
+
+(**********************************************************************)
+
 exception TypeMismatch of typ * typ
 exception TypeError of string * typ
 exception OpenExpr of id
@@ -109,7 +133,7 @@ let assert_lam = function
   | Lam (i, ty, e) -> (i, ty, e)
   | e -> raise (EvalError ("Expected lambda, got", e))
 
-(* eval e = v when e ⇓ v *)
+(* Big-Step Evaluation: eval e = v when e ⇓ v *)
 let rec eval = function
   (* n ⇓ n *)
   | Num n -> Num n
@@ -140,31 +164,92 @@ let rec eval = function
 
 (**********************************************************************)
 
-open Printf
+(* E = [] | E e | v E | E op e | v op E
+ *
+ * Here, we'll use expr for v, and just keep that invariant manually. *)
+type ctx = Hole
+           | AppLeft of ctx * expr
+           | AppRight of expr * ctx
+           | OpLeft of binop * ctx * expr
+           | OpRight of binop * expr * ctx
 
-let fprintf_bop out = function
-  | Plus  -> fprintf out "+"
-  | Minus -> fprintf out "-"
-  | Times -> fprintf out "*"
-  | Div   -> fprintf out "/"
+(* Predicate for being just a hole context. *)
+let is_hole = function
+  | Hole -> true
+  | _ -> false
 
-let rec fprintf_type out = function
-  | Int -> fprintf out "int"
-  | Fun (t1, t2) -> fprintf out "(%a -> %a)" fprintf_type t1 fprintf_type t2
+(* Predicate for value expressions. *)
+let value = function
+  | Num n -> true
+  | Lam (i, ty, e) -> true
+  | _ -> false
 
-let rec fprintf_expr out = function
-  | Num n -> fprintf out "%d" n
-  | Var v -> fprintf out "%s" v
+let assert_value e =
+  if value e then () else raise (EvalError ("Expected value, got", e))
+
+(* Performs the unique decomposition of e into E[e']. *)
+let rec split = function
+  | Num n -> (Hole, Num n)
+  | Lam (i, ty, e) -> (Hole, Lam (i, ty, e))
+  | Var x -> raise (OpenExpr x)
   | Binop (b, e1, e2) ->
-    fprintf out "(%a %a %a)" fprintf_expr e1 fprintf_bop b fprintf_expr e2
-  | Lam (i, ty, e) ->
-    fprintf out "(\\%s : %a.%a)" i fprintf_type ty fprintf_expr e
+    if value e1
+    then 
+      if value e2
+      then (Hole, Binop (b, e1, e2))
+      else let (c, e) = split e2
+           in (OpRight (b, e1, c), e)
+    else let (c, e) = split e1
+         in (OpLeft (b, c, e2), e)
   | App (e1, e2) ->
-    fprintf out "%a %a" fprintf_expr e1 fprintf_expr e2
+    if value e1
+    then
+      if value e2
+      then (Hole, App (e1, e2))
+      else let (c, e) = split e2
+           in (AppRight (e1, c), e)
+    else let (c, e) = split e1
+         in (AppLeft (c, e2), e)
+
+(* Recomposes an expression and a context into an expression. *)
+let rec recompose e = function
+  | Hole -> e
+  | OpLeft   (b, c, e2) -> Binop (b, recompose e c, e2)
+  | OpRight  (b, e1, c) -> Binop (b, e1, recompose e c)
+  | AppLeft  (c, e2)    -> App (recompose e c, e2)
+  | AppRight (e1, c)    -> App (e1, recompose e c)
+
+(* Performs the reduction rules e ↪ e' of our language. *)
+let rec step = function
+  (* n1 + n2 ↪ n3, where n3 = n1 + n2 (similarly for -, *, /) *)
+  | Binop (b, e1, e2) ->
+    let n1 = assert_num e1 in
+    let n2 = assert_num e2 in
+    (match b with
+      | Plus  -> Num (n1 + n2)
+      | Minus -> Num (n1 - n2)
+      | Times -> Num (n1 * n2)
+      | Div   -> Num (n1 / n2))
+  (* (λx:τ.e) v ↪ e[x ↦ v] *)
+  | App (e1, e2) ->
+    let (id, ty, body) = assert_lam e1 in
+    assert_value e2;
+    subst id e2 body
+  | e ->
+    raise (EvalError ("unexpected expression to step:", e))
+
+(* Performs the reflexive, transitive closure of ⇒, where ⇒ is the compatible
+ * closure of ↪ (that is, E[e] ⇒ E[e'] if e ↪ e').
+ * I.e., step_closure e = v if e ⇒* v. *)
+let rec reduction_relation e =
+  let (c, e) = split e in
+  if is_hole c && value e
+  then e
+  else reduction_relation (recompose (step e) c)
 
 (**********************************************************************)
 
-(* Testing framework, prints out "e : t --> v" for success, otherwise
+(* Testing framework, prints out "e : t ⇓ v, ⇒* v" for success, otherwise
  * prints an error after printing out the original expression (and
  * type if the error is only in evaluation, which should only happen
  * for division by zero). *)
@@ -174,7 +259,9 @@ let test_expr e =
   (try (let ty = typecheck e in
         printf " : %a" fprintf_type ty;
         let v = eval e in
-        printf " --> %a\n" fprintf_expr v)
+        printf " ⇓ %a" fprintf_expr v;
+        let v = reduction_relation e in
+        printf ", ⇒* %a\n" fprintf_expr v)
    with TypeMismatch (t1, t2) ->
      printf "\nERROR: Type %a does not match type %a\n"
        fprintf_type t1 fprintf_type t2
