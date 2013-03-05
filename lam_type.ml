@@ -240,10 +240,9 @@ let rec step = function
  * closure of ↪ (that is, E[e] ⇒ E[e'] if e ↪ e').
  * I.e., step_closure e = v if e ⇒* v. *)
 let rec reduction_relation e =
-  let (c, e') = split e in
-  if value e' (* should only happen when c = [] *)
-  then e'
-  else reduction_relation (recompose (step e') c)
+  if value e
+  then e
+  else let (c, e') = split e in reduction_relation (recompose (step e') c)
 
 (**********************************************************************)
 
