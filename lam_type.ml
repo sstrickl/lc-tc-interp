@@ -29,7 +29,7 @@ let fprintf_bop out = function
 
 let rec fprintf_type out = function
   | Int -> fprintf out "int"
-  | Fun (t1, t2) -> fprintf out "(%a -> %a)" fprintf_type t1 fprintf_type t2
+  | Fun (t1, t2) -> fprintf out "(%a→%a)" fprintf_type t1 fprintf_type t2
 
 let rec fprintf_expr out = function
   | Num n -> fprintf out "%d" n
@@ -37,7 +37,7 @@ let rec fprintf_expr out = function
   | Binop (b, e1, e2) ->
     fprintf out "(%a %a %a)" fprintf_expr e1 fprintf_bop b fprintf_expr e2
   | Lam (i, ty, e) ->
-    fprintf out "(\\%s : %a.%a)" i fprintf_type ty fprintf_expr e
+    fprintf out "(λ%s:%a.%a)" i fprintf_type ty fprintf_expr e
   | App (e1, e2) ->
     fprintf out "%a %a" fprintf_expr e1 fprintf_expr e2
 
