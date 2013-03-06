@@ -96,7 +96,7 @@ let typecheck e = tc_expr [] e
 
 (**********************************************************************)
 
-(* Evaluation *)
+(* Helpers for Evaluation *)
 
 (* With typechecking, we should never get the following exception. *)
 exception EvalError of string * expr
@@ -133,7 +133,11 @@ let assert_lam = function
   | Lam (i, ty, e) -> (i, ty, e)
   | e -> raise (EvalError ("Expected lambda, got", e))
 
-(* Big-Step Evaluation: eval e = v when e ⇓ v *)
+(**********************************************************************)
+
+(* Big-Step or Natural Semantics *)
+
+(* eval e = v when e ⇓ v *)
 let rec eval = function
   (* n ⇓ n *)
   | Num n -> Num n
@@ -164,6 +168,61 @@ let rec eval = function
 
 (**********************************************************************)
 
+(* Small Step or Structured Operational Semantics *)
+
+(* Predicate for value expressions. *)
+let value = function
+  | Num n -> true
+  | Lam (i, ty, e) -> true
+  | _ -> false
+
+(* step_one e = e' when e ↝ e' *)
+let rec step_one = function
+  | Binop (b, e1, e2) ->
+    if value e1
+    then
+      if value e2
+      (* n1 + n2 ↝ n3 where n3 = n1 + n2 (similarly for - * /) *)
+      then let n1 = assert_num e1 in
+           let n2 = assert_num e2 in
+           (match b with
+               Plus  -> Num (n1 + n2)
+             | Minus -> Num (n1 - n2)
+             | Times -> Num (n1 * n2)
+             | Div   -> Num (n1 / n2))
+      (*        e2 ↝ e2'
+       * ----------------------
+       *  v1 op e2 ↝ v1 op e2' *)
+      else Binop (b, e1, step_one e2)
+    (*        e1 ↝ e1'
+     * ----------------------
+     *  e1 op e2 ↝ e1' op e2 *)
+    else Binop (b, step_one e1, e2)
+  | App (e1, e2) ->
+    if value e1
+    then
+      if value e2
+      (* (λx:τ.e) v ↝ e[x ↦ v] *)
+      then let (i, ty, body) = assert_lam e1
+           in subst i e2 body
+      (*     e2 ↝ e2'
+       * -----------------
+       *  v1 e2 ↝ v1 e2' *)
+      else App (e1, step_one e2)
+    (*      e1 ↝ e1'
+     * -----------------
+     *  e1 e2 ↝ e1' e2  *)
+    else App (step_one e1, e2)
+  | e -> raise (EvalError ("Should not try to step", e))
+
+(* Reflexive, transitive closure of ↝, so step_many e = v when e ↝* v *)
+let rec step_many e =
+  if value e
+  then e
+  else step_many (step_one e)
+
+(**********************************************************************)
+
 (* Reduction Semantics *)
 
 (* E = [] | E e | v E | E op e | v op E
@@ -174,12 +233,6 @@ type ctx = Hole
            | AppRight of expr * ctx
            | OpLeft of binop * ctx * expr
            | OpRight of binop * expr * ctx
-
-(* Predicate for value expressions. *)
-let value = function
-  | Num n -> true
-  | Lam (i, ty, e) -> true
-  | _ -> false
 
 (* Used to assert the argument is a value in beta reduction *)
 let assert_value e =
@@ -218,7 +271,7 @@ let rec recompose e = function
   | AppRight (e1, c)    -> App (e1, recompose e c)
 
 (* Performs the reduction rules e ↪ e' of our language. *)
-let rec step = function
+let rec red_step = function
   (* n1 + n2 ↪ n3, where n3 = n1 + n2 (similarly for -, *, /) *)
   | Binop (b, e1, e2) ->
     let n1 = assert_num e1 in
@@ -242,13 +295,13 @@ let rec step = function
 let rec reduction_relation e =
   if value e
   then e
-  else let (c, e') = split e in reduction_relation (recompose (step e') c)
+  else let (c, e') = split e in reduction_relation (recompose (red_step e') c)
 
 (**********************************************************************)
 
-(* Testing framework, prints out "e : t ⇓ v, ⇒* v" for success, otherwise
- * prints an error after printing out the original expression (and
- * type if the error is only in evaluation, which should only happen
+(* Testing framework, prints out "e : t ⇓ v, ↝* v, ⇒* v" for success,
+ * otherwise prints an error after printing out the original expression
+ * (and type if the error is only in evaluation, which should only happen
  * for division by zero). *)
 
 let test_expr e =
@@ -257,6 +310,8 @@ let test_expr e =
         printf " : %a" fprintf_type ty;
         let v = eval e in
         printf " ⇓ %a" fprintf_expr v;
+        let v = step_many e in
+        printf ", ↝* %a" fprintf_expr v;
         let v = reduction_relation e in
         printf ", ⇒* %a\n" fprintf_expr v)
    with TypeMismatch (t1, t2) ->
