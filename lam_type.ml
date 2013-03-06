@@ -309,10 +309,13 @@ let test_expr e =
   (try (let ty = typecheck e in
         printf " : %a" fprintf_type ty;
         let v = eval e in
+        assert_value v;
         printf " ⇓ %a" fprintf_expr v;
         let v = step_many e in
+        assert_value v;
         printf ", ↝* %a" fprintf_expr v;
         let v = reduction_relation e in
+        assert_value v;
         printf ", ⇒* %a\n" fprintf_expr v)
    with TypeMismatch (t1, t2) ->
      printf "\nERROR: Type %a does not match type %a\n"
