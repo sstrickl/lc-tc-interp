@@ -81,12 +81,12 @@ let rec tc_expr env = function
     Int
   (*      Γ, x:τ1 ⊢ e : τ2
    *  -------------------------
-   *    Γ ⊢ λx:t1.e : t1 → t2  *)
+   *    Γ ⊢ λx:τ1.e : τ1 → τ2  *)
   | Lam (i, ty, e) ->
     Fun (ty, tc_expr ((i, ty) :: env) e)
   (*   Γ ⊢ e1 : τ1 → τ2    Γ ⊢ e2 : τ1
    *  ---------------------------------
-   *         Γ ⊢ e1 e2 : t2            *)
+   *         Γ ⊢ e1 e2 : τ2            *)
   | App (e1, e2) ->
     (match tc_expr env e1 with
       | Fun (t1, t2) -> assert_equal_type ((tc_expr env e2), t1); t2
@@ -299,7 +299,7 @@ let rec reduction_relation e =
 
 (**********************************************************************)
 
-(* Testing framework, prints out "e : t ⇓ v, ↝* v, ⇒* v" for success,
+(* Testing framework, prints out "e : τ ⇓ v, ↝* v, ⇒* v" for success,
  * otherwise prints an error after printing out the original expression
  * (and type if the error is only in evaluation, which should only happen
  * for division by zero). *)
