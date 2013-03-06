@@ -10,7 +10,7 @@ type typ = Int
 (* Γ := · | Γ, x:τ *)
 type env = (id * typ) list
 
-(* e := e e | \λx.e | e op e | x | n *)
+(* e := e e | λx.e | e op e | x | n *)
 type expr = App of expr * expr
           | Lam of id * typ * expr
           | Binop of binop * expr * expr
