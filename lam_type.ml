@@ -158,13 +158,13 @@ let rec eval = function
       | Minus -> Num (n1 - n2)
       | Times -> Num (n1 * n2)
       | Div   -> Num (n1 / n2))
-  (*  e1 ⇓ λx:τ.e     e2 ⇓ v
-     ------------------------
-         e1 e2 ⇓ e[x ↦ v]    *)
+  (*  e1 ⇓ λx:τ.e     e2 ⇓ v1  e[x ↦ v1] ⇓ v2
+   * -----------------------------------------
+   *              e1 e2 ⇓ v2                   *)
   | App (e1, e2) ->
     let (id, ty, body) = assert_lam (eval e1) in
     let arg = eval e2 in
-    subst id arg body
+    eval (subst id arg body)
 
 (**********************************************************************)
 
@@ -338,11 +338,15 @@ let test4 = App (App (Lam ("x", Int, Lam ("y", Int, Var "x")), Num 4), Num 5)
 
 let test5 = Binop (Plus, Num 3, Num 4);;
 
+let test6 = App (Lam ("x", Fun (Int, Int), App (Var "x", Num 3)),
+                 Lam ("x", Int, Var "x"));;
+
 test_expr test1;;
 test_expr test2;;
 test_expr test3;;
 test_expr test4;;
 test_expr test5;;
+test_expr test6;;
 
 (* Failing testcases *)
 
