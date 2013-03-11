@@ -170,11 +170,18 @@ let rec eval = function
 
 (* Small Step or Structured Operational Semantics *)
 
-(* Predicate for value expressions. *)
+(* Predicate for value expressions. Values are irreducible expressions. *)
 let value = function
   | Num n -> true
   | Lam (i, ty, e) -> true
   | _ -> false
+
+(* Computes the reflexive, transitive closure of the relation f on
+ * expression.  This closure maps values to themselves. *)
+let rec refl_trans_closure f e =
+  if value e
+  then e
+  else refl_trans_closure f (f e)
 
 (* step_one e = e' when e ↝ e' *)
 let rec step_one = function
@@ -216,10 +223,7 @@ let rec step_one = function
   | e -> raise (EvalError ("Should not try to step", e))
 
 (* Reflexive, transitive closure of ↝, so step_many e = v when e ↝* v *)
-let rec step_many e =
-  if value e
-  then e
-  else step_many (step_one e)
+let step_many = refl_trans_closure step_one
 
 (**********************************************************************)
 
@@ -289,13 +293,15 @@ let rec red_step = function
   | e ->
     raise (EvalError ("unexpected expression to step:", e))
 
-(* Performs the reflexive, transitive closure of ⇒, where ⇒ is the compatible
- * closure of ↪ (that is, E[e] ⇒ E[e'] if e ↪ e').
+(* Performs ⇒, the compatible closure of ↪.
+ * I.e., compatible_closure e = e' if E[e] ⇒ E[e'], and
+ *       E[e] ⇒ E[e'] if e ↪ e'. *)
+let compatible_closure e =
+  let (c, e') = split e in (recompose (red_step e') c)
+
+(* Performs the reflexive, transitive closure of ⇒.
  * I.e., step_closure e = v if e ⇒* v. *)
-let rec reduction_relation e =
-  if value e
-  then e
-  else let (c, e') = split e in reduction_relation (recompose (red_step e') c)
+let reduction_relation = refl_trans_closure compatible_closure
 
 (**********************************************************************)
 
